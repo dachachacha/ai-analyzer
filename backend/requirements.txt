@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+weaviate-client
+motor
+openai
+loguru
+#transformers
+#pytorch

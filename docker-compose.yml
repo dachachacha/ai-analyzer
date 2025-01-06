@@ -1,0 +1,103 @@
+# docker-compose.yml
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate
+    environment:
+      QUERY_DEFAULTS_LIMIT: '50'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: text2vec-openai
+      CLUSTER_ENABLED: 'false'
+      CLUSTER_HOSTNAME: 'weaviate'
+      #CLUSTER_GOSSIP_BIND_PORT: '17101'
+      #CLUSTER_DATA_BIND_PORT: '17102'
+    ports:
+      - 18080:8080     # Host port 18080 → Container port 8080
+      - 50051:50051
+    volumes:
+      - context_gen_weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - context-app-network
+
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    ports:
+      - 17017:27017    # Host port 17017 → Container port 27017
+    volumes:
+      - context_gen_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - context-app-network
+
+  backend:
+    build: ./backend
+    container_name: backend
+    ports:
+      - 18000:8000     # Host port 18000 → Container port 8000
+    depends_on:
+      weaviate:
+        condition: service_started
+      mongo:
+        condition: service_started
+    environment:
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      WEAVIATE_URL: "http://weaviate:8080"
+      WEAVIATE_HOST: "weaviate"
+      WEAVIATE_PORT: "8080"
+      MONGO_URL: "mongodb://mongo:27017"
+    volumes:
+      - ./backend:/app
+    networks:
+      - context-app-network
+    secrets:
+      - openai_api_key
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - 13000:3000  # Host port 13000 → Container port 80
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      REACT_APP_API_BASE_URL: "http://localhost:18000/api"
+    volumes:
+      - ./frontend:/usr/src/app
+      - frontend_node_modules:/usr/src/app/node_modules
+      #- /usr/src/app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - context-app-network
+
+networks:
+  context-app-network:
+    driver: bridge
+
+volumes:
+  context_gen_weaviate_data:
+  context_gen_mongo_data:
+  frontend_node_modules:
+
+secrets:
+  openai_api_key: 
+    file: ./secrets/openai_key.txt
