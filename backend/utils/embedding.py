@@ -5,11 +5,10 @@ from fastapi import HTTPException
 from loguru import logger
 from openai import OpenAI
 
-openai_client = OpenAI()
 
 def get_embedding(text: str) -> List[float]:
-    return [0.1,1.0]
     try:
+        openai_client = OpenAI()
         response = openai_client.embeddings.create(
             model="text-embedding-ada-002",
             input=text

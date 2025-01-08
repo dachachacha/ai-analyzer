@@ -3,23 +3,28 @@
 from weaviate import Client
 from weaviate.classes.config import Configure, Property, DataType
 from loguru import logger
-from config import CLASS_NAME
+#from config import CLASSNAME
+from utils.collection_names import (
+    get_weaviate_class_name,
+)
 
-def setup_weaviate_schema(weaviate_client: Client, delete: bool = False):
+
+def setup_weaviate_schema(weaviate_client: Client, project: str, delete: bool = False):
     """
     Create or recreate the 'CodeChunk' collection using Weaviate's Collections API.
     """
     existing_collections = weaviate_client.collections.list_all()
-    if CLASS_NAME in existing_collections:
+    class_name = get_weaviate_class_name(project)
+    if class_name in existing_collections:
         if delete:
-            logger.info(f"Collection '{CLASS_NAME}' already exists. Deleting it for fresh setup.")
-            weaviate_client.collections.delete(CLASS_NAME)
+            logger.info(f"Collection '{class_name}' already exists. Deleting it for fresh setup.")
+            weaviate_client.collections.delete(class_name)
         else:
-            logger.info(f"Collection '{CLASS_NAME}' already exists. Returning.")
+            logger.info(f"Collection '{class_name}' already exists. Returning.")
             return
-    logger.info(f"Creating collection '{CLASS_NAME}'.")
+    logger.info(f"Creating collection '{class_name}'.")
     weaviate_client.collections.create(
-        name=CLASS_NAME,
+        name=class_name,
         description="Store code chunks and their embeddings",
         vectorizer_config=Configure.Vectorizer.text2vec_openai(),
         properties=[
@@ -31,5 +36,5 @@ def setup_weaviate_schema(weaviate_client: Client, delete: bool = False):
             Property(name="endLine", data_type=DataType.INT),
         ]
     )
-    logger.info(f"Collection '{CLASS_NAME}' created successfully.")
+    logger.info(f"Collection '{class_name}' created successfully.")
 

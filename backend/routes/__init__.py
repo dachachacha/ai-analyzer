@@ -6,6 +6,7 @@ from .flush import router as flush_router
 from .health import router as health_router
 from .hashes import router as hashes_router
 from .history import router as history_router
+from .projects import router as projects_router
 
 def include_routers(app):
     app.include_router(analyze_router)
@@ -14,4 +15,5 @@ def include_routers(app):
     app.include_router(health_router)
     app.include_router(hashes_router)
     app.include_router(history_router)
+    app.include_router(projects_router)
 

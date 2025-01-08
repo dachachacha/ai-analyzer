@@ -4,11 +4,15 @@ from fastapi import APIRouter, Request, HTTPException
 from typing import List
 from loguru import logger
 from datetime import datetime
+from utils import (
+    get_mongo_answers_collection_name,
+)
+
 
 router = APIRouter()
 
 @router.get("/api/history")
-async def get_query_history(request: Request, limit: int = 10, skip: int = 0):
+async def get_query_history(request: Request, project: str, limit: int = 10, skip: int = 0):
     """
     Fetch query history from the database with optional pagination.
 
@@ -22,9 +26,8 @@ async def get_query_history(request: Request, limit: int = 10, skip: int = 0):
     """
     try:
         # Access the MongoDB collection
-        collection = request.app.state.answers_collection
-
-        # Query the collection with pagination
+        answers_collection = get_mongo_answers_collection_name(project)
+        collection = request.app.state.db[answers_collection]
         cursor = collection.find().sort("timestamp", -1).skip(skip).limit(limit)
         history = await cursor.to_list(length=limit)
 

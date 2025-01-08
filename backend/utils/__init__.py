@@ -8,6 +8,8 @@ from .sanitizer import sanitize_keys
 from .summarizer import summarize_interactions
 from .filtering import get_filtered_file_paths
 from .secrets import load_file_secret
+from .normalizer import normalize_project_name
+from .collection_names import get_mongo_chunk_hashes_collection_name, get_mongo_answers_collection_name, get_weaviate_class_name
 
 __all__ = [
     'calculate_hash',
@@ -19,5 +21,9 @@ __all__ = [
     'summarize_interactions',
     'get_filtered_file_paths',  # Exposed the filtering function
     'load_file_secret',
+    'normalize_project_name',
+    'get_mongo_chunk_hashes_collection_name',
+    'get_mongo_answers_collection_name',
+    'get_weaviate_class_name',
 ]
 

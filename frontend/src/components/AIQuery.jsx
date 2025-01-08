@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-function AIQuery() {
+function AIQuery({ project }) {
   // Initialize states with values from localStorage
   const [query, setQuery] = useState(() => localStorage.getItem('query') || '');
   const [answer, setAnswer] = useState(() => localStorage.getItem('answer') || '');
@@ -27,6 +27,10 @@ function AIQuery() {
 
   const handleQuery = async () => {
     logEvent('handleQuery invoked');
+    if (!project) {
+      setNotification({ type: 'error', message: 'No project loaded.' });
+      return;
+    }
 
     if (!query.trim()) {
       logEvent('Empty query submitted');
@@ -40,7 +44,10 @@ function AIQuery() {
       setNotification({ type: 'info', message: 'Querying AI. Please wait...' });
       logEvent('Sending API request', { query });
 
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/query`, { query });
+      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/query`, { 
+        project,
+        query,
+      });
 
       logEvent('Received API response', { response: response.data });
       setAnswer(response.data.answer);

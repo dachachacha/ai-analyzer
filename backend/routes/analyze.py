@@ -8,14 +8,18 @@ from datetime import datetime
 from fastapi import APIRouter, Request, Body, Depends, HTTPException
 from loguru import logger
 
-from models import AnalyzeRequest
+from models import AnalyzeRequest, ProjectValidator
 from utils import (
     chunk_file,
     calculate_hash,
     looks_like_binary,
     get_embedding,
-    get_filtered_file_paths
+    get_filtered_file_paths,
+    get_mongo_chunk_hashes_collection_name,
+    get_weaviate_class_name,
 )
+from utils.validators import validate_project
+
 
 from database import get_db
 from config import CLASS_NAME
@@ -25,81 +29,116 @@ from motor.motor_asyncio import AsyncIOMotorClient
 router = APIRouter()
 
 @router.post("/api/analyze")
-async def analyze_code_folder(
-    request: Request, 
-    body: Optional[AnalyzeRequest] = Body(None), 
-    db: AsyncIOMotorClient = Depends(get_db)
+async def analyze_code(
+    request: Request,
+    analyze_request: AnalyzeRequest = Body(...),
+    project_data: dict = Depends(validate_project),
 ):
-    folder_path = body.folderPath if body and body.folderPath else 'codebase'
+    # Update folder path to look in the "codebase" subfolder
+    base_folder = "codebase"
+    folder_path = os.path.join(base_folder, project_data["folder"])
+
+    logger.debug(f"Received request to analyze code for project: {project_data}")
+    logger.debug(f"Using folder path: {folder_path}")
+
+    db = request.app.state.db
+
+    if not os.path.exists(folder_path):
+        logger.error(f"Folder path '{folder_path}' does not exist.")
+        raise HTTPException(status_code=400, detail=f"Folder path '{folder_path}' does not exist.")
+
+    chunk_hashes_collection = get_mongo_chunk_hashes_collection_name(project_data['normalized_name'])
+    weaviate_class_name = get_weaviate_class_name(project_data['normalized_name'])
+    hashes_collection = db[chunk_hashes_collection]
+
+    logger.debug(f"MongoDB chunk hashes collection: {chunk_hashes_collection}")
+    logger.debug(f"Weaviate class name: {weaviate_class_name}")
+
     file_paths = get_filtered_file_paths(folder_path)
+    logger.debug(f"Filtered file paths: {file_paths}")
 
     chunked_files = []
     ignored_files = []
-    
+
     if not file_paths:
         logger.warning(f"No files found in {folder_path}.")
         return {"message": f"No files found in {folder_path}."}
 
-    # Access the hashes collection in MongoDB
-    logger.info("Accessing the hashes collection in MongoDB")
-    hashes_collection = request.app.state.chunk_hashes_collection
-    logger.info("Hashes collection accessed successfully.")
-
     for fp in file_paths:
-        _, ext = os.path.splitext(fp)
-        if looks_like_binary(ext):
+        logger.debug(f"Processing file: {fp}")
+        try:
+            _, ext = os.path.splitext(fp)
+            if looks_like_binary(ext):
+                logger.debug(f"File '{fp}' identified as binary and will be ignored.")
+                ignored_files.append(fp)
+                continue
+
+            chunks = chunk_file(fp)
+            logger.debug(f"Number of chunks generated for file '{fp}': {len(chunks)}")
+            if chunks:
+                pass#chunked_files.append(fp)
+            else:
+                logger.debug(f"No chunks generated for file '{fp}'")
+                ignored_files.append(fp)
+        except Exception as e:
+            logger.error(f"Failed to process file '{fp}': {e}")
             ignored_files.append(fp)
             continue
-        chunks = chunk_file(fp)
-        if chunks:
-            chunked_files.append(fp)
-        else:
-            ignored_files.append(fp)
-        logger.info(f"Processing chunks for: {fp}")
+
         for ch in chunks:
-            text = ch["content"].strip()
-            logger.info(f"##### CHUNK (length: {len(text.split(chr(10)))} lines) ####")
-            logger.info(text)
-            logger.info("##### END CHUNK ####")
-            if not text:
-                continue
-            content_hash = calculate_hash(text)
-            logger.info(f"Content hash: {content_hash}")
-            # Check if the hash exists in the database
-            existing_hash = await hashes_collection.find_one({"filePath": ch["filePath"], "hash": content_hash})
-            logger.info(f"Query result for {ch['filePath']}: {existing_hash}")
-            if existing_hash:
-                logger.info(f"Skipping unchanged chunk: {ch['filePath']}")
-                continue
-            embedding = get_embedding(text)
-            data_object = {
-                "content": ch["content"],
-                "filePath": ch["filePath"],
-                "language": ch["language"],
-                "functionName": ch["functionName"],
-                "startLine": ch["startLine"],
-                "endLine": ch["endLine"],
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            status = fp
+            logger.debug(f"Processing chunk for file '{fp}'")
             try:
-                logger.info(f"Saving chunk for {ch['filePath']}")
+                text = ch["content"].strip()
+                if not text:
+                    logger.debug(f"Skipping empty chunk in file '{fp}'")
+                    continue
+
+                content_hash = calculate_hash(text)
+                logger.debug(f"Content hash for chunk: {content_hash}")
+
+                existing_hash = await hashes_collection.find_one({"filePath": ch["filePath"], "hash": content_hash})
+                if existing_hash:
+                    logger.debug(f"Chunk already exists in database for file '{fp}'. Skipping.")
+                    status += " (chunck exists, not adding)"
+                    chunked_files.append(status)
+                    continue
+                else:
+                    chunked_files.append(status)
+
+                embedding = get_embedding(text)
+                logger.debug(f"Generated embedding for chunk in file '{fp}'")
+
+                data_object = {
+                    "content": ch["content"],
+                    "filePath": ch["filePath"],
+                    "language": ch["language"],
+                    "functionName": ch["functionName"],
+                    "startLine": ch["startLine"],
+                    "endLine": ch["endLine"],
+                    "timestamp": datetime.utcnow().isoformat()
+                }
                 weaviate_client = request.app.state.weaviate_client
-                chunk_collection = weaviate_client.collections.get(CLASS_NAME)
-                uuid = chunk_collection.data.insert(
-                    properties=data_object,
-                    vector=embedding
-                )
-                logger.info(f"Hash inserted/updated for {ch['filePath']}")
-                # Update MongoDB with the new hash
+                chunk_collection = weaviate_client.collections.get(weaviate_class_name)
+                chunk_collection.data.insert(properties=data_object, vector=embedding)
+                logger.debug(f"Inserted chunk into Weaviate for file '{fp}'")
+
                 await hashes_collection.update_one(
                     {"filePath": ch["filePath"], "hash": content_hash},
                     {"$set": {"hash": content_hash}},
                     upsert=True
                 )
-                logger.debug(f"Stored chunk in Weaviate and updated hash: {ch['filePath']}")
+                logger.debug(f"Updated MongoDB for chunk in file '{fp}'")
             except Exception as e:
-                logger.error(f"Failed to store chunk in Weaviate: {e}")
+                logger.error(f"Failed to store chunk for file '{fp}': {e}")
 
-    logger.info("Code analysis completed.")
-    return {"message": "Code analysis completed.", "chunked": chunked_files, "ignored": ignored_files}
+    logger.info(f"Code analysis completed for project: {project_data['name']}")
+    return {
+        "message": "Code analysis completed.",
+        "total_files": len(file_paths),
+        "chunked_files": len(chunked_files),
+        "ignored_files": len(ignored_files),
+        "details": {"chunked": chunked_files, "ignored": ignored_files},
+    }
+
 

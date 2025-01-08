@@ -6,7 +6,8 @@ function CodeAnalyze({ project }) {
   //const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [chunked, setChunked] = useState([]);
+  const [chunkedFiles, setChunkedFiles] = useState([]);
+  const [ignoredFiles, setIgnoredFiles] = useState([]);
   const [notification, setNotification] = useState(null); // Notification state
 
   // Function to handle logging (centralized logging)
@@ -27,16 +28,18 @@ function CodeAnalyze({ project }) {
 
     try {
       setLoading(true);
-      //setError('');
+      setError('');
       setNotification({ type: 'info', message: 'Analyzing code. Please wait...' });
       logEvent('Sending analyze API request');
 
       const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/analyze`, {
-        project
+        project,
+        folderPath: null, // Explicitly send null or an empty string
       });
 
       logEvent('Received analyze API response', { response: response.data });
-      setChunked(response.data.details.chunked);
+      setChunkedFiles(response.data.chunked);
+      setIgnoredFiles(response.data.ignored);
       setNotification({ type: 'success', message: 'Analysis completed successfully.' });
     } catch (err) {
       logEvent('Error during analyze API request', { error: err });
@@ -60,9 +63,7 @@ function CodeAnalyze({ project }) {
       setNotification({ type: 'info', message: 'Flushing the database...' });
       logEvent('Sending flush API request');
 
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/flush`,{
-        project
-      });
+      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/flush`);
 
       logEvent('Received flush API response', { response: response.data });
       setNotification({ type: 'success', message: `Flushed: ${response.data.message}` });
@@ -146,15 +147,23 @@ function CodeAnalyze({ project }) {
         <h3 className="text-lg font-semibold mb-2">Chunked Files</h3>
         <textarea
           readOnly
-          value={chunked.join('\n')}
+          value={chunkedFiles.join('\n')}
           className="w-full p-2 border rounded h-32 bg-gray-100"
         />
       </div>
 
+      {/* Ignored Files Display */}
+      <div className="mt-4">
+        <h3 className="text-lg font-semibold mb-2">Ignored Files</h3>
+        <textarea
+          readOnly
+          value={ignoredFiles.join('\n')}
+          className="w-full p-2 border rounded h-32 bg-gray-100"
+        />
+      </div>
     </div>
   );
 }
 
 export default CodeAnalyze;
-
 
