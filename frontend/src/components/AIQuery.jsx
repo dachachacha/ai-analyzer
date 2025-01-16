@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
 
 function AIQuery({ project }) {
   // Initialize states with values from localStorage
@@ -92,10 +93,8 @@ function AIQuery({ project }) {
         <label className="block mb-2 text-gray-700">Enter your question</label>
         <textarea
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value); // Removed logEvent for input change
-          }}
-          className="border rounded p-2 w-full h-48 resize" // Larger text area with full width and adjustable height
+          onChange={(e) => setQuery(e.target.value)}
+          className="border rounded p-2 w-full h-48 resize"
           placeholder="Ask something about your code..."
         />
       </div>
@@ -108,14 +107,14 @@ function AIQuery({ project }) {
       </button>
 
       {answer && (
-        <div className="mt-4 p-4 border rounded bg-gray-100 relative">
-          <h3 className="font-semibold text-lg mb-2">Answer:</h3>
-          <div className="whitespace-pre-wrap text-gray-800 text-sm max-h-64 overflow-y-auto">
-            {answer}
+        <div className="mt-6 p-6 border rounded bg-gray-50 shadow relative">
+          <h3 className="font-semibold text-xl mb-4 border-b pb-2">Answer:</h3>
+          <div className="prose">
+            <ReactMarkdown>{answer}</ReactMarkdown>
           </div>
           <button
             onClick={() => navigator.clipboard.writeText(answer)}
-            className="absolute top-4 right-4 bg-blue-500 text-white px-2 py-1 text-sm rounded hover:bg-blue-600"
+            className="absolute top-4 right-4 bg-blue-500 text-white px-3 py-1 text-sm rounded hover:bg-blue-600"
             title="Copy to Clipboard"
           >
             Copy
@@ -127,3 +126,4 @@ function AIQuery({ project }) {
 }
 
 export default AIQuery;
+

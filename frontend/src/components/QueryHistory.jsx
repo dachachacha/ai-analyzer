@@ -49,7 +49,7 @@ function QueryHistory({ project }) {
         params: { project },
       });
       logEvent('Received history data', { response: response.data });
-      setHistory(response.data.history || []);
+      setHistory(response.data || []);
       setNotification({ type: 'success', message: 'Query history loaded successfully.' });
     } catch (err) {
       logEvent('Error fetching query history', { error: err });
