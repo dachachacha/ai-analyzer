@@ -7,6 +7,7 @@ function CodeAnalyze({ project }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [chunked, setChunked] = useState([]);
+  const [ignored, setIgnored] = useState([]);
   const [notification, setNotification] = useState(null); // Notification state
 
   // Function to handle logging (centralized logging)
@@ -37,6 +38,7 @@ function CodeAnalyze({ project }) {
 
       logEvent('Received analyze API response', { response: response.data });
       setChunked(response.data.details.chunked);
+      setIgnored(response.data.details.ignored);
       setNotification({ type: 'success', message: 'Analysis completed successfully.' });
     } catch (err) {
       logEvent('Error during analyze API request', { error: err });
@@ -147,6 +149,15 @@ function CodeAnalyze({ project }) {
         <textarea
           readOnly
           value={chunked.join('\n')}
+          className="w-full p-2 border rounded h-32 bg-gray-100"
+        />
+      </div>
+      {/* Ignored Files Display */}
+      <div className="mt-4">
+        <h3 className="text-lg font-semibold mb-2">Ignored Files</h3>
+        <textarea
+          readOnly
+          value={ignored.join('\n')}
           className="w-full p-2 border rounded h-32 bg-gray-100"
         />
       </div>

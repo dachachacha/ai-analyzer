@@ -34,7 +34,6 @@ async def analyze_code(
     analyze_request: AnalyzeRequest = Body(...),
     project_data: dict = Depends(validate_project),
 ):
-    # Update folder path to look in the "codebase" subfolder
     base_folder = "codebase"
     folder_path = os.path.join(base_folder, project_data["folder"])
 
@@ -75,62 +74,74 @@ async def analyze_code(
 
             chunks = chunk_file(fp)
             logger.debug(f"Number of chunks generated for file '{fp}': {len(chunks)}")
-            if chunks:
-                pass#chunked_files.append(fp)
-            else:
+            if not chunks:
                 logger.debug(f"No chunks generated for file '{fp}'")
                 ignored_files.append(fp)
-        except Exception as e:
-            logger.error(f"Failed to process file '{fp}': {e}")
-            ignored_files.append(fp)
-            continue
+                continue
 
-        for ch in chunks:
-            status = fp
-            logger.debug(f"Processing chunk for file '{fp}'")
-            try:
+            # Check for changes in chunk hashes
+            file_changed = False
+            for ch in chunks:
                 text = ch["content"].strip()
                 if not text:
                     logger.debug(f"Skipping empty chunk in file '{fp}'")
                     continue
 
                 content_hash = calculate_hash(text)
-                logger.debug(f"Content hash for chunk: {content_hash}")
-
                 existing_hash = await hashes_collection.find_one({"filePath": ch["filePath"], "hash": content_hash})
-                if existing_hash:
-                    logger.debug(f"Chunk already exists in database for file '{fp}'. Skipping.")
-                    status += " (chunck exists, not adding)"
-                    chunked_files.append(status)
-                    continue
-                else:
-                    chunked_files.append(status)
+                if not existing_hash:
+                    file_changed = True
+                    break
 
-                embedding = get_embedding(text)
-                logger.debug(f"Generated embedding for chunk in file '{fp}'")
-
-                data_object = {
-                    "content": ch["content"],
-                    "filePath": ch["filePath"],
-                    "language": ch["language"],
-                    "functionName": ch["functionName"],
-                    "startLine": ch["startLine"],
-                    "endLine": ch["endLine"],
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+            if file_changed:
+                # Delete all chunks for this file in Weaviate and MongoDB
                 weaviate_client = request.app.state.weaviate_client
                 chunk_collection = weaviate_client.collections.get(weaviate_class_name)
-                chunk_collection.data.insert(properties=data_object, vector=embedding)
-                logger.debug(f"Inserted chunk into Weaviate for file '{fp}'")
 
-                await hashes_collection.update_one(
-                    {"filePath": ch["filePath"], "hash": content_hash},
-                    {"$set": {"hash": content_hash}},
-                    upsert=True
+                logger.debug(f"Executing deletion for file '{fp}'.")
+                response = chunk_collection.data.delete_many(
+                    where=Filter.by_property(name="filePath").equal(fp)
                 )
-                logger.debug(f"Updated MongoDB for chunk in file '{fp}'")
-            except Exception as e:
-                logger.error(f"Failed to store chunk for file '{fp}': {e}")
+                await hashes_collection.delete_many({"filePath": fp})
+
+                # Re-chunk the file and insert new chunks
+                for ch in chunks:
+                    text = ch["content"].strip()
+                    if not text:
+                        continue
+
+                    content_hash = calculate_hash(text)
+                    embedding = get_embedding(text)
+                    logger.debug(f"Generated embedding for chunk in file '{fp}'")
+
+                    data_object = {
+                        "content": ch["content"],
+                        "filePath": ch["filePath"],
+                        "language": ch["language"],
+                        "functionName": ch["functionName"],
+                        "startLine": ch["startLine"],
+                        "endLine": ch["endLine"],
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    chunk_collection.data.insert(properties=data_object, vector=embedding)
+                    logger.debug(f"Inserted chunk into Weaviate for file '{fp}'")
+
+                    await hashes_collection.update_one(
+                        {"filePath": ch["filePath"], "hash": content_hash},
+                        {"$set": {"hash": content_hash}},
+                        upsert=True
+                    )
+                    logger.debug(f"Updated MongoDB for chunk in file '{fp}'")
+
+                chunked_files.append(fp)
+            else:
+                logger.debug(f"No changes detected for file '{fp}'. Skipping re-chunking.")
+                chunked_files.append(fp)
+
+        except Exception as e:
+            logger.error(f"Failed to process file '{fp}': {e}")
+            ignored_files.append(fp)
+            continue
 
     logger.info(f"Code analysis completed for project: {project_data['name']}")
     return {
@@ -140,5 +151,4 @@ async def analyze_code(
         "ignored_files": len(ignored_files),
         "details": {"chunked": chunked_files, "ignored": ignored_files},
     }
-
 

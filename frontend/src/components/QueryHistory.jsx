@@ -50,7 +50,6 @@ function QueryHistory({ project }) {
         params: { project },
       });
       logEvent('Received history data', { response: response.data });
-      // Assuming the API returns a list directly
       setHistory(response.data || []);
       setNotification({ type: 'success', message: 'Query history loaded successfully.' });
     } catch (err) {
@@ -109,10 +108,26 @@ function QueryHistory({ project }) {
               key={index}
               className="border rounded p-4 bg-gray-100 shadow-sm hover:shadow-md transition-shadow"
             >
-              <p>
-                <span className="font-semibold">Query:</span> {entry.query}
-              </p>
-              <div>
+              <div className="bg-gray-200 p-2 rounded mb-2">
+                <span className="font-semibold">Query:</span>
+                <ReactMarkdown
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        renderCodeBlock({ language: match[1], value: String(children).replace(/\n$/, '') })
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                  }}
+                >
+                  {entry.query}
+                </ReactMarkdown>
+              </div>
+              <div className="bg-white p-2 rounded">
                 <span className="font-semibold">Answer:</span>
                 <ReactMarkdown
                   components={{
