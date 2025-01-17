@@ -38,7 +38,7 @@ function Projects({ setCurrentProject }) {
     try {
       const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/projects`);
       setProjects(response.data.projects || []);
-      setNotification({ type: 'success', message: 'Projects loaded successfully.' });
+      setNotification({ type: 'success', message: 'Projects list retrieved. Please load one' });
     } catch (err) {
       logEvent('Error fetching projects', { error: err });
       setNotification({ type: 'error', message: 'Failed to load projects.' });

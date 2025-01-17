@@ -47,7 +47,7 @@ async def get_chunked_files(request: Request, projectName: str):
             for group in grouped_results
         ]
 
-        logger.debug(f"Retrieved chunked files: {files}")
+        #logger.debug(f"Retrieved chunked files: {files}")
         return {"files": files}
 
     except Exception as e:

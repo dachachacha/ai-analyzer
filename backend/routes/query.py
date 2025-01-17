@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from tiktoken import encoding_for_model
 
-from models import QueryRequest
+from models import QueryRequest, QuerySettings
 from utils import (
     get_embedding,
     summarize_interactions,
@@ -25,10 +25,10 @@ from weaviate.classes.query import MetadataQuery
 
 router = APIRouter()
 
-
 class QueryResponse(BaseModel):
     answer: str
-
+    tokens_submitted: int
+    tokens_returned: int
 
 @router.post("/api/query", response_model=QueryResponse)
 async def query_ai(
@@ -38,6 +38,15 @@ async def query_ai(
 ):
     user_query = body.query
     project = normalize_project_name(body.project)
+    settings = body.settings
+
+    # Use settings in your logic as needed
+    nb_chunks_used_for_query = int(settings.querySettings.get("nbChunksUsedForQuery", 10))
+    nb_literal_items = int(settings.historySummarizerSettings.get("nbLiteralItems", 2))
+    max_total_history_items = int(settings.historySummarizerSettings.get("maxTotalHistoryItems", 10))
+    logger.debug(f'settings -  nb_chunks_used_for_query: {nb_chunks_used_for_query}')
+    logger.debug(f'settings -  nb_literal_items: {nb_literal_items}')
+    logger.debug(f'settings -  max_total_history_items: {max_total_history_items}')
 
     # Input validation
     if not user_query.strip():
@@ -72,7 +81,7 @@ async def query_ai(
         chunk_collection = weaviate_client.collections.get(weaviate_class_name)
         result = chunk_collection.query.near_vector(
             near_vector=query_emb,
-            limit=10,
+            limit=nb_chunks_used_for_query,
             return_metadata=MetadataQuery(distance=True)
         )
         logger.debug("Weaviate query executed successfully.")
@@ -96,7 +105,7 @@ async def query_ai(
 
     if not retrieved_chunks:
         logger.info("No relevant code chunks found for the query.")
-        return {"answer": "No relevant code chunks found for your query."}
+        return {"answer": "No relevant code chunks found for your query.", "tokens_submitted": 0, "tokens_returned": 0}
 
     # Limit context to prevent exceeding token limits
     encoder = encoding_for_model("gpt-4")
@@ -115,12 +124,15 @@ async def query_ai(
         else:
             break
 
-    summary = await summarize_interactions(answers_collection)
+    summary = await summarize_interactions(answers_collection, max_literal=nb_literal_items, max_total=max_total_history_items)
     context.append(summary)
     context_str = "\n---\n".join(context)
     prompt = f"Context:\n{context_str}\n\nQuestion: {user_query}\nAnswer:"
 
     logger.info(f"Generated prompt for AI: {prompt}")
+
+    # Calculate tokens submitted
+    tokens_submitted = len(encoder.encode(prompt))
 
     # Call OpenAI API (Unchanged)
     try:
@@ -132,9 +144,11 @@ async def query_ai(
             max_tokens=5000
         )
         ai_answer = completion.choices[0].message.content.strip()
+        tokens_returned = len(encoder.encode(ai_answer))
         logger.info("AI responded successfully.")
     except Exception as e:
         ai_answer = f"Error calling OpenAI: {e}"
+        tokens_returned = 0
         logger.error(f"OpenAI API call failed: {e}")
 
     # Sanitize and store the result
@@ -152,5 +166,4 @@ async def query_ai(
         logger.error(f"Failed to store Q&A in MongoDB: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to store query and answer.")
 
-    return {"answer": ai_answer}
-
+    return {"answer": ai_answer, "tokens_submitted": tokens_submitted, "tokens_returned": tokens_returned}

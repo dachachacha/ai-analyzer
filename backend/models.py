@@ -6,9 +6,14 @@ from typing import Optional
 class AnalyzeRequest(BaseModel):
     project: str
 
+class QuerySettings(BaseModel):
+    querySettings: dict
+    historySummarizerSettings: dict
+
 class QueryRequest(BaseModel):
     query: str
     project: str
+    settings: QuerySettings
 
 class ProjectDeleteRequest(BaseModel):
     name: str

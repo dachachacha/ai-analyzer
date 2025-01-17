@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 function QueryHistory({ project }) {
   const [history, setHistory] = useState([]);
@@ -33,7 +35,6 @@ function QueryHistory({ project }) {
     );
   };
 
-  // Memoized fetchHistory function to prevent recreation
   const fetchHistory = useCallback(async () => {
     if (!project) {
       setNotification({ type: 'error', message: 'No project loaded.' });
@@ -49,6 +50,7 @@ function QueryHistory({ project }) {
         params: { project },
       });
       logEvent('Received history data', { response: response.data });
+      // Assuming the API returns a list directly
       setHistory(response.data || []);
       setNotification({ type: 'success', message: 'Query history loaded successfully.' });
     } catch (err) {
@@ -59,11 +61,26 @@ function QueryHistory({ project }) {
       setLoading(false);
       logEvent('fetchHistory completed', { loading: false });
     }
-  }, [project]); // Memoized with project as dependency
+  }, [project]);
 
   useEffect(() => {
     fetchHistory();
-  }, [fetchHistory]); // No project needed, as it's already a dependency of fetchHistory
+  }, [fetchHistory]);
+
+  const renderCodeBlock = ({ language, value }) => (
+    <div className="relative">
+      <SyntaxHighlighter language={language} style={solarizedlight}>
+        {value}
+      </SyntaxHighlighter>
+      <button
+        onClick={() => navigator.clipboard.writeText(value)}
+        className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 text-sm rounded hover:bg-blue-600"
+        title="Copy to Clipboard"
+      >
+        Copy
+      </button>
+    </div>
+  );
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -97,7 +114,22 @@ function QueryHistory({ project }) {
               </p>
               <div>
                 <span className="font-semibold">Answer:</span>
-                <ReactMarkdown className="mt-2 prose prose-sm">{entry.answer}</ReactMarkdown>
+                <ReactMarkdown
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        renderCodeBlock({ language: match[1], value: String(children).replace(/\n$/, '') })
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                  }}
+                >
+                  {entry.answer}
+                </ReactMarkdown>
               </div>
               <p className="text-sm text-gray-500">
                 <span className="font-semibold">Timestamp:</span>{' '}
@@ -112,4 +144,3 @@ function QueryHistory({ project }) {
 }
 
 export default QueryHistory;
-

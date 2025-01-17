@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-function AIQuery({ project }) {
-  // Initialize states with values from localStorage
+function AIQuery({ project, settings }) {
   const [query, setQuery] = useState(() => localStorage.getItem('query') || '');
   const [answer, setAnswer] = useState(() => localStorage.getItem('answer') || '');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
+
+  const answerRef = useRef(null);
 
   const logEvent = (message, data = null) => {
     if (data) {
@@ -17,13 +20,15 @@ function AIQuery({ project }) {
     }
   };
 
-  // Save query and answer to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('query', query);
   }, [query]);
 
   useEffect(() => {
     localStorage.setItem('answer', answer);
+    if (answer && answerRef.current) {
+      answerRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [answer]);
 
   const handleQuery = async () => {
@@ -43,16 +48,20 @@ function AIQuery({ project }) {
       setLoading(true);
       setAnswer('Querying AI. Please wait...');
       setNotification({ type: 'info', message: 'Querying AI. Please wait...' });
-      logEvent('Sending API request', { query });
+      logEvent('Sending API request', { query, settings });
 
       const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/query`, { 
         project,
         query,
+        settings,
       });
 
       logEvent('Received API response', { response: response.data });
       setAnswer(response.data.answer);
-      setNotification({ type: 'success', message: 'Query successful!' });
+      setNotification({ 
+        type: 'success', 
+        message: `Query successful! Tokens submitted: ${response.data.tokens_submitted}, Tokens returned: ${response.data.tokens_returned}` 
+      });
     } catch (err) {
       logEvent('Error during API request', { error: err });
       console.error('[AIQuery] Error querying AI:', err);
@@ -60,7 +69,7 @@ function AIQuery({ project }) {
       setNotification({ type: 'error', message: 'Error querying AI. Please try again.' });
     } finally {
       setLoading(false);
-      setQuery(''); // Flush the textbox after the query is done
+      setQuery('');
       logEvent('handleQuery completed', { loading: false });
     }
   };
@@ -82,6 +91,21 @@ function AIQuery({ project }) {
       </div>
     );
   };
+
+  const renderCodeBlock = ({ language, value }) => (
+    <div className="relative">
+      <SyntaxHighlighter language={language} style={solarizedlight}>
+        {value}
+      </SyntaxHighlighter>
+      <button
+        onClick={() => navigator.clipboard.writeText(value)}
+        className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 text-sm rounded hover:bg-blue-600"
+        title="Copy to Clipboard"
+      >
+        Copy
+      </button>
+    </div>
+  );
 
   return (
     <div className="p-4 bg-white rounded shadow-md max-w-3xl mx-auto">
@@ -107,18 +131,24 @@ function AIQuery({ project }) {
       </button>
 
       {answer && (
-        <div className="mt-6 p-6 border rounded bg-gray-50 shadow relative">
+        <div ref={answerRef} className="mt-6 p-6 border rounded bg-gray-50 shadow relative">
           <h3 className="font-semibold text-xl mb-4 border-b pb-2">Answer:</h3>
-          <div className="prose">
-            <ReactMarkdown>{answer}</ReactMarkdown>
-          </div>
-          <button
-            onClick={() => navigator.clipboard.writeText(answer)}
-            className="absolute top-4 right-4 bg-blue-500 text-white px-3 py-1 text-sm rounded hover:bg-blue-600"
-            title="Copy to Clipboard"
+          <ReactMarkdown
+            components={{
+              code({ node, inline, className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+                return !inline && match ? (
+                  renderCodeBlock({ language: match[1], value: String(children).replace(/\n$/, '') })
+                ) : (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                );
+              }
+            }}
           >
-            Copy
-          </button>
+            {answer}
+          </ReactMarkdown>
         </div>
       )}
     </div>
@@ -126,4 +156,3 @@ function AIQuery({ project }) {
 }
 
 export default AIQuery;
-
